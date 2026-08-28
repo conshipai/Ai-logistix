@@ -307,6 +307,8 @@ useful:
 
 Before exposing an environment publicly:
 
+- [ ] A PostgreSQL service exists and `DATABASE_URL` uses its **internal**
+      hostname, not `localhost`
 - [ ] `AUTH_SECRET` generated with `openssl rand -base64 32`, not a placeholder
 - [ ] `APP_URL` and `AUTH_URL` set to the real HTTPS origin
 - [ ] TLS active; the site is unreachable over plain HTTP

@@ -17,12 +17,19 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
+import { reportEnvironment } from './check-env.mjs'
 
 const server = path.join(process.cwd(), '.next', 'standalone', 'server.js')
 if (!existsSync(server)) {
   console.error(
     '[mconnect] .next/standalone/server.js is missing. Run `npm run build` before `npm start`.',
   )
+  process.exit(1)
+}
+
+// Fail on configuration before invoking Prisma, so a missing variable reads as
+// one clear message rather than a schema-validation stack trace.
+if (!reportEnvironment({ production: process.env.NODE_ENV === 'production' })) {
   process.exit(1)
 }
 
