@@ -155,7 +155,9 @@ export function storage(): StorageDriver {
     return driver
   }
 
-  driver = new LocalStorageDriver(path.resolve(process.cwd(), config.STORAGE_LOCAL_PATH))
+  driver = new LocalStorageDriver(
+    path.resolve(/* turbopackIgnore: true */ process.cwd(), config.STORAGE_LOCAL_PATH),
+  )
   return driver
 }
 
