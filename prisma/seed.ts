@@ -268,7 +268,8 @@ async function main() {
 
   // --- Users --------------------------------------------------------------
 
-  const [adminUser, opsUser, supplierUser, epcUser, ownerUser, bankUser] = await Promise.all([
+  // ownerUser is created for the demonstration but is not referenced below.
+  const [adminUser, opsUser, supplierUser, epcUser, _ownerUser, bankUser] = await Promise.all([
     createUser({
       email: 'admin@demo-ailogistix.example',
       name: 'Tomás Ehler',

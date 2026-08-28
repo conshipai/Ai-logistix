@@ -29,7 +29,7 @@ import {
   notify,
   usersInOrganization,
 } from '@/server/services/notifications'
-import { advanceStage, advanceStageIfAhead } from '@/server/services/transactions'
+import { advanceStageIfAhead } from '@/server/services/transactions'
 
 /**
  * Financing.
