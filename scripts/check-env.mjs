@@ -49,6 +49,20 @@ export function checkEnvironment({ production = false } = {}) {
   }
 
   const warnings = []
+
+  // Documents are the evidence behind a financing decision. The local driver
+  // writes them inside the container, so unless a persistent volume is mounted
+  // every redeploy destroys them — silently, and only discovered when someone
+  // needs a document months later. Worth saying loudly on every start.
+  if (production && (process.env.STORAGE_DRIVER ?? 'local') === 'local') {
+    warnings.push(
+      `STORAGE_DRIVER is "local" — uploaded documents are written inside the container at ` +
+        `${process.env.STORAGE_LOCAL_PATH ?? './.storage'} and will be LOST on every redeploy ` +
+        `unless a persistent volume is mounted there. Set STORAGE_DRIVER=s3 with ` +
+        `object-storage credentials, or attach a volume.`,
+    )
+  }
+
   for (const variable of RECOMMENDED) {
     const value = process.env[variable.name]
     if (!value) {

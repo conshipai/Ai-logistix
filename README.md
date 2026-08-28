@@ -132,7 +132,8 @@ docker compose up --build
 | `npm test` | Full test suite |
 | `npm run prisma:migrate` | Create and apply a migration in development |
 | `npm run prisma:deploy` | Apply committed migrations (production) |
-| `npm run db:seed` | Load demonstration data |
+| `npm run db:seed` | Load demonstration data (never against production) |
+| `npm run create-admin` | Create the first administrator |
 
 ---
 
@@ -422,7 +423,10 @@ Then SMTP and storage as required.
 `STORAGE_ENDPOINT` and credentials at your object storage.
 
 **With `STORAGE_DRIVER=local`**: mount a persistent volume at `/app/.storage`.
-Without it, uploaded documents are lost on every redeploy.
+Without it, uploaded documents are lost on every redeploy — and documents are
+the evidence behind a financing decision, so that loss is not recoverable from
+anywhere else. The application warns about this on every start in production;
+do not leave the warning standing.
 
 ### 5. Domain and TLS
 
@@ -443,12 +447,28 @@ That is deliberate: check the deployment logs for the migration step first.
 
 ### 7. First administrator
 
-The seed script is a demonstration tool and should not be run against
-production. Create the first real administrator by connecting to the database
-and inserting an organization, a user with a bcrypt hash, and a membership with
-role `AI_LOGISTIX_ADMIN` — or run the seed once in a staging environment,
-confirm the flow, and register the first real user through `/register` and
-approve them with a temporarily seeded admin.
+A freshly deployed MConnect has no users. Registration is self-service but
+grants no access, and approving a registration needs an administrator — so
+without this step there is no way in.
+
+From the deployment's terminal:
+
+```bash
+ADMIN_EMAIL=you@company.com ADMIN_NAME="Your Name" npm run create-admin
+```
+
+It creates the AI Logistix organization if none exists, creates an active
+administrator, and prints a generated password **once**. Save it to a password
+manager, then sign in and change it. Supply `ADMIN_PASSWORD` to choose your own,
+bearing in mind that puts it in the shell history.
+
+Re-running for an existing address is refused, so it cannot silently take over
+an account. To deliberately reset that account's password and re-grant the
+administrator role, add `ADMIN_RESET_PASSWORD=true`.
+
+The script is safe against production: it creates nothing fictional and writes
+an audit event, like every other privileged action. The seed script is the
+opposite — demonstration data only, never run it against production.
 
 ### Manual steps after deployment
 

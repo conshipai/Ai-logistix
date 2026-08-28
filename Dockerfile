@@ -74,6 +74,9 @@ COPY --from=builder --chown=mconnect:nodejs /app/public ./public
 # deliberately not copied — it is TypeScript and the runtime image carries no
 # TS loader — so the schema path is passed to the CLI explicitly.
 COPY --from=builder --chown=mconnect:nodejs /app/prisma ./prisma
+# create-admin is needed in the running container: a fresh deployment has no
+# users, and there is otherwise no way to obtain the first one.
+COPY --from=builder --chown=mconnect:nodejs /app/scripts ./scripts
 COPY --from=prisma-cli --chown=mconnect:nodejs /cli/node_modules ./prisma-cli/node_modules
 
 COPY --chown=mconnect:nodejs docker-entrypoint.sh ./docker-entrypoint.sh

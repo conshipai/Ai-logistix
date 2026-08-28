@@ -15,6 +15,7 @@
  * instead (SKIP_MIGRATIONS=true).
  */
 import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { reportEnvironment } from './check-env.mjs'
@@ -37,7 +38,24 @@ if (process.env.SKIP_MIGRATIONS === 'true') {
   console.info('[mconnect] SKIP_MIGRATIONS=true — not applying migrations.')
 } else {
   console.info('[mconnect] Applying database migrations…')
-  const migrate = spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
+  // Resolve the installed CLI rather than shelling out to npx, which tries to
+  // fetch the package over the network when it cannot resolve it locally — an
+  // unwanted dependency in a container's start path, and a confusing failure
+  // when egress is restricted.
+  let cli
+  try {
+    cli = createRequire(import.meta.url).resolve('prisma/build/index.js')
+  } catch {
+    console.error(
+      '[mconnect] The Prisma CLI is not installed. It is a devDependency, so an\n' +
+        '           install with --omit=dev cannot apply migrations. Either install\n' +
+        '           dev dependencies, or set SKIP_MIGRATIONS=true and apply them\n' +
+        '           from a separate release step.',
+    )
+    process.exit(1)
+  }
+
+  const migrate = spawnSync(process.execPath, [cli, 'migrate', 'deploy'], {
     stdio: 'inherit',
     env: process.env,
   })
