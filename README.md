@@ -170,6 +170,12 @@ platform does not need a mail relay to operate.
 `MAX_UPLOAD_BYTES` (default 25 MB), `SIGNED_URL_TTL_SECONDS` (default 300),
 `SKIP_MIGRATIONS`, `SEED_PASSWORD`.
 
+`BIND_HOST` overrides the interface the server listens on. It defaults to
+`0.0.0.0` and should almost never be changed: Docker sets `HOSTNAME` to the
+container id, and the Next.js standalone server would otherwise bind to that
+instead of every interface — leaving a healthy container that a reverse proxy
+cannot reach, which presents as 502 Bad Gateway.
+
 Environment parsing is centralised in `src/lib/env.ts` and validated by Zod. A
 missing or malformed required value fails loudly at first use rather than
 degrading silently.

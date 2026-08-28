@@ -48,5 +48,14 @@ if (process.env.SKIP_MIGRATIONS === 'true') {
   console.info('[mconnect] Migrations up to date.')
 }
 
-console.info(`[mconnect] Starting server on ${process.env.HOSTNAME ?? '0.0.0.0'}:${process.env.PORT ?? 3000}`)
+// Docker sets HOSTNAME to the container id, and the Next.js standalone server
+// binds to whatever HOSTNAME contains (`process.env.HOSTNAME || '0.0.0.0'`).
+// Left alone, the server binds to the container's own id instead of every
+// interface, so a reverse proxy on the shared Docker network cannot reach it —
+// a healthy, "Ready" container that answers every request with 502 Bad Gateway.
+// The production Dockerfile pins HOSTNAME=0.0.0.0 for the same reason; this is
+// the equivalent for deployments that run from the repository.
+process.env.HOSTNAME = process.env.BIND_HOST || '0.0.0.0'
+
+console.info(`[mconnect] Starting server on ${process.env.HOSTNAME}:${process.env.PORT ?? 3000}`)
 await import(server)
