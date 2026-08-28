@@ -3,7 +3,11 @@ import { prisma } from '@/lib/db'
 import { AUDIT_ACTIONS, recordAudit } from '@/lib/audit'
 import { nextTransactionNumber } from '@/lib/ids'
 import { AuthorizationError, NotFoundError, isStaff, requirePermission, type Actor } from '@/lib/rbac'
-import { assertTransactionStageTransition, stageIndex } from '@/lib/state-machine'
+import {
+  TRANSACTION_LIFECYCLE,
+  assertTransactionStageTransition,
+  stageIndex,
+} from '@/lib/state-machine'
 import { requireTransactionScope, transactionScopeWhere } from '@/server/services/access'
 import { notify, NOTIFICATION_EVENTS, usersInOrganization } from '@/server/services/notifications'
 
@@ -132,9 +136,18 @@ export async function advanceStage(
 }
 
 /**
- * Advances only when the target stage is ahead of the current one and the
- * machine permits it. Used by handlers that record progress without wanting to
- * fail the whole action on an out-of-order update.
+ * Advances to a stage that is ahead of the current one, walking the lifecycle
+ * one step at a time.
+ *
+ * Real transactions skip explicit steps: a buyer confirming acceptance implies
+ * delivery happened, even if nobody recorded a DELIVERY stage. Rather than
+ * silently refusing such an update — which would leave the lifecycle banner
+ * showing a stale stage — each intervening stage is recorded in turn, so the
+ * stage history stays a complete and honest account of how the transaction
+ * reached where it is.
+ *
+ * A target that is behind the current stage is ignored: progress is never
+ * rolled back by a late-arriving update.
  */
 export async function advanceStageIfAhead(
   db: Db,
@@ -148,13 +161,22 @@ export async function advanceStageIfAhead(
     select: { stage: true },
   })
   if (!transaction) return
-  if (stageIndex(toStage) <= stageIndex(transaction.stage)) return
-  try {
-    await advanceStage(db, transactionId, toStage, actor, { note })
-  } catch {
-    // A skipped intermediate stage is not an error worth failing the caller on;
-    // the stage will catch up when the intervening step is recorded.
+
+  const from = stageIndex(transaction.stage)
+  const target = stageIndex(toStage)
+  if (target <= from || target >= TRANSACTION_LIFECYCLE.length) return
+
+  for (let index = from + 1; index <= target; index += 1) {
+    const step = TRANSACTION_LIFECYCLE[index]!
+    await advanceStage(db, transactionId, step, actor, {
+      note: step === toStage ? note : `Implied by "${note ?? humanizeStage(toStage)}".`,
+    })
   }
+}
+
+function humanizeStage(stage: TransactionStage): string {
+  const lower = stage.toLowerCase().replace(/_/g, ' ')
+  return lower.charAt(0).toUpperCase() + lower.slice(1)
 }
 
 export interface ListTransactionsOptions {
@@ -365,7 +387,7 @@ export async function closeTransaction(actor: Actor, transactionId: string): Pro
   }
 
   await prisma.$transaction(async (tx) => {
-    await advanceStage(tx, transactionId, 'CLOSED', actor, { note: 'Transaction closed.' })
+    await advanceStageIfAhead(tx, transactionId, 'CLOSED', actor, 'Transaction closed.')
     await tx.transactionMilestone.updateMany({
       where: { transactionId, status: { in: ['PENDING', 'IN_PROGRESS'] } },
       data: { status: 'SKIPPED' },

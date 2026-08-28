@@ -95,6 +95,9 @@ const EPC: Permission[] = [
   'po:verify',
   'transaction:read',
   'delivery:accept',
+  // Accepting and paying a supplier invoice is the buyer's action; the invoice
+  // service separately refuses to let a supplier certify its own invoice.
+  'invoice:manage',
   'document:upload',
   'document:read',
   'comment:create',
