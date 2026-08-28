@@ -1,0 +1,1250 @@
+// MConnect — Local Content Supply Chain Finance
+// Powered by AI Logistix
+//
+// Design notes:
+//  * Every table uses a UUID primary key. Nothing sequential is ever exposed in
+//    a URL, so an organization cannot enumerate another organization's records.
+//  * Human-readable identifiers (MCONNECT-2026-000001, document reference codes)
+//    are separate unique columns, never the primary key.
+//  * The country is always an explicit column. Nothing in the schema assumes
+//    Mozambique is the only market.
+//  * Money is stored as Decimal(18,2) with an explicit ISO-4217 currency column.
+//    Floating point is never used for financial amounts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum OrganizationType {
+  SUPPLIER
+  EPC
+  PROJECT_OWNER
+  FINANCIAL_INSTITUTION
+  AI_LOGISTIX
+  GOVERNMENT
+  AUDITOR
+  INSPECTION_COMPANY
+  OTHER
+}
+
+enum Role {
+  SUPPLIER
+  EPC
+  PROJECT_OWNER
+  FINANCIER
+  AI_LOGISTIX_ADMIN
+  AI_LOGISTIX_OPERATIONS
+  VIEWER
+}
+
+enum AccountStatus {
+  PENDING_REVIEW
+  ACTIVE
+  SUSPENDED
+  REJECTED
+  CLOSED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  VERIFIED
+  EXPIRED
+  REJECTED
+}
+
+enum LocalContentClassification {
+  NOT_ASSESSED
+  LOCAL
+  LOCAL_JOINT_VENTURE
+  REGIONAL
+  INTERNATIONAL
+}
+
+enum RevenueRange {
+  UNDER_100K
+  FROM_100K_TO_500K
+  FROM_500K_TO_1M
+  FROM_1M_TO_5M
+  FROM_5M_TO_25M
+  FROM_25M_TO_100M
+  OVER_100M
+  UNDISCLOSED
+}
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  VERIFICATION_REQUESTED
+  VERIFIED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum VerificationMethod {
+  PLATFORM_REVIEW
+  EMAIL_CONFIRMATION
+  DOCUMENT_REVIEW
+  ERP_LOOKUP
+  PHONE_CONFIRMATION
+  OTHER
+}
+
+enum FundingRequestStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_AI_LOGISTIX_REVIEW
+  EPC_VERIFICATION_PENDING
+  FINANCIER_REVIEW
+  INFORMATION_REQUESTED
+  CONDITIONALLY_APPROVED
+  APPROVED
+  REJECTED
+  FUNDED
+  PARTIALLY_REPAID
+  REPAID
+  DEFAULT
+  CANCELLED
+}
+
+enum FundingPurpose {
+  RAW_MATERIALS
+  IMPORTED_COMPONENTS
+  LOCAL_COMPONENTS
+  LABOUR
+  LOGISTICS
+  CUSTOMS_AND_TAXES
+  OTHER
+}
+
+enum TransactionStage {
+  PURCHASE_ORDER
+  VERIFICATION
+  FINANCING_REVIEW
+  APPROVED
+  FUNDED
+  PROCUREMENT
+  LOGISTICS
+  MANUFACTURING
+  DELIVERY
+  BUYER_ACCEPTANCE
+  PAYMENT
+  REPAYMENT
+  CLOSED
+  CANCELLED
+}
+
+enum ProcurementItemStatus {
+  PLANNED
+  QUOTE_RECEIVED
+  APPROVED
+  ORDERED
+  IN_PRODUCTION
+  READY
+  SHIPPED
+  CUSTOMS
+  DELIVERED
+  CANCELLED
+}
+
+enum ShipmentMode {
+  AIR
+  OCEAN_FCL
+  OCEAN_LCL
+  ROAD
+  RAIL
+  COURIER
+  PROJECT_CARGO
+  OTHER
+}
+
+enum ShipmentMilestoneType {
+  BOOKED
+  PICKUP_SCHEDULED
+  PICKED_UP
+  RECEIVED_AT_ORIGIN
+  EXPORT_CLEARED
+  DEPARTED
+  ARRIVED
+  IMPORT_CLEARANCE
+  CUSTOMS_RELEASED
+  OUT_FOR_DELIVERY
+  DELIVERED
+}
+
+enum CustomsStatus {
+  NOT_STARTED
+  DOCUMENTS_SUBMITTED
+  UNDER_INSPECTION
+  DUTIES_ASSESSED
+  CLEARED
+  HELD
+}
+
+enum DeliveryStatus {
+  NOT_STARTED
+  IN_TRANSIT
+  DELIVERED
+  EXCEPTION
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+  SKIPPED
+}
+
+enum MilestoneType {
+  FUNDING_APPROVED
+  RAW_MATERIAL_ORDERED
+  RAW_MATERIAL_SHIPPED
+  RAW_MATERIAL_DELIVERED
+  FABRICATION_STARTED
+  PROGRESS_25
+  PROGRESS_50
+  PROGRESS_75
+  INSPECTION_SCHEDULED
+  INSPECTION_PASSED
+  READY_FOR_DELIVERY
+  DELIVERED
+  BUYER_ACCEPTED
+  INVOICE_SUBMITTED
+  INVOICE_APPROVED
+  PAYMENT_RECEIVED
+  FINANCE_REPAID
+  CUSTOM
+}
+
+enum DocumentCategory {
+  COMPANY_REGISTRATION
+  TAX_DOCUMENT
+  KYC
+  BANK_LETTER
+  AUDITED_FINANCIALS
+  MANAGEMENT_ACCOUNTS
+  PURCHASE_ORDER
+  CONTRACT
+  TECHNICAL_SPECIFICATION
+  DRAWING
+  COMMERCIAL_QUOTE
+  VENDOR_QUOTE
+  BILL_OF_MATERIALS
+  PAYMENT_SCHEDULE
+  PURCHASE_INVOICE
+  COMMERCIAL_INVOICE
+  PACKING_LIST
+  BILL_OF_LADING
+  AIR_WAYBILL
+  CUSTOMS_DOCUMENT
+  CERTIFICATE_OF_ORIGIN
+  QUALITY_CERTIFICATE
+  INSPECTION_CERTIFICATE
+  PROOF_OF_DELIVERY
+  BUYER_ACCEPTANCE
+  PAYMENT_CONFIRMATION
+  OTHER
+}
+
+/// Controls which parties can see a document beyond its owning organization
+/// and AI Logistix. Enforced server-side in the document access service.
+enum DocumentVisibility {
+  /// Owning organization + AI Logistix only.
+  RESTRICTED
+  /// Every organization party to the transaction (supplier, EPC, owner, financier).
+  TRANSACTION_PARTIES
+  /// Transaction parties plus financiers the transaction was shared with.
+  FINANCIERS
+  /// Every party plus read-only auditors granted access to the transaction.
+  ALL_PARTIES_AND_AUDITORS
+}
+
+enum ApprovalType {
+  PO_VERIFICATION
+  AI_LOGISTIX_TRANSACTION_REVIEW
+  FINANCING_APPROVAL
+  DISBURSEMENT_APPROVAL
+  PROCUREMENT_APPROVAL
+  DELIVERY_ACCEPTANCE
+  INVOICE_ACCEPTANCE
+  TRANSACTION_CLOSE
+}
+
+enum ApprovalDecision {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+enum RfiStatus {
+  OPEN
+  RESPONDED
+  RESOLVED
+  CANCELLED
+}
+
+enum DisbursementAuthorizationStatus {
+  DRAFT
+  PENDING_APPROVAL
+  AUTHORIZED
+  REJECTED
+  CANCELLED
+}
+
+enum DisbursementPaymentStatus {
+  NOT_PAID
+  SCHEDULED
+  PAID
+  FAILED
+  REVERSED
+}
+
+enum RepaymentSource {
+  BUYER_PAYMENT
+  SUPPLIER_FUNDS
+  INSURANCE_CLAIM
+  OTHER
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum InquiryType {
+  SUPPLIER
+  EPC_PROJECT_OWNER
+  FINANCIAL_INSTITUTION
+  GOVERNMENT_DEVELOPMENT_FINANCE
+}
+
+enum InquiryStatus {
+  NEW
+  IN_REVIEW
+  CONTACTED
+  CLOSED
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+// ---------------------------------------------------------------------------
+// Identity & organizations
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  /// Human-readable, non-sequential-looking public reference.
+  reference            String                     @unique
+  type                 OrganizationType
+  legalName            String
+  tradingName          String?
+  country              String // ISO 3166-1 alpha-2
+  registrationNumber   String?
+  taxId                String?
+  addressLine1         String?
+  addressLine2         String?
+  city                 String?
+  stateProvince        String?
+  postalCode           String?
+  website              String?
+  primaryContactName   String?
+  primaryContactEmail  String?
+  phone                String?
+  email                String?
+  incorporationDate    DateTime?                  @db.Date
+  industry             String?
+  employeeCount        Int?
+  annualRevenueRange   RevenueRange?
+  ownershipDescription String?                    @db.Text
+  localContentClass    LocalContentClassification @default(NOT_ASSESSED)
+  preferredCurrency    String                     @default("USD")
+  kycStatus            KycStatus                  @default(NOT_STARTED)
+  kycNotes             String?                    @db.Text
+  accountStatus        AccountStatus              @default(PENDING_REVIEW)
+  /// Marks fictional seed records so demo data is never mistaken for real data.
+  isDemo               Boolean                    @default(false)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+
+  memberships          OrganizationMembership[]
+  supplierProfile      SupplierProfile?
+  bankingRelationships BankingRelationship[]
+
+  projectsAsOwner          Project[]       @relation("ProjectOwner")
+  projectsAsEpc            Project[]       @relation("ProjectEpc")
+  purchaseOrdersAsSupplier PurchaseOrder[] @relation("PoSupplier")
+  purchaseOrdersAsBuyer    PurchaseOrder[] @relation("PoBuyer")
+
+  transactionsAsSupplier Transaction[]       @relation("TxSupplier")
+  transactionsAsBuyer    Transaction[]       @relation("TxBuyer")
+  transactionAccess      TransactionAccess[]
+
+  documents                  Document[]
+  approvalsRequested         Approval[]       @relation("ApprovalRequestedFromOrg")
+  auditEvents                AuditEvent[]
+  vendors                    Vendor[]
+  fundingRequestsAsFinancier FundingRequest[] @relation("FundingFinancier")
+
+  @@index([type])
+  @@index([country])
+  @@index([accountStatus])
+  @@index([createdAt])
+  @@map("organizations")
+}
+
+model SupplierProfile {
+  id                          String       @id @default(uuid()) @db.Uuid
+  organizationId              String       @unique @db.Uuid
+  organization                Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  capabilities                String?      @db.Text
+  certifications              String?      @db.Text
+  qualityCertifications       String?      @db.Text
+  healthSafetyCertifications  String?      @db.Text
+  equipment                   String?      @db.Text
+  facilities                  String?      @db.Text
+  projectExperience           String?      @db.Text
+  customerReferences          String?      @db.Text
+  maximumContractCapacity     Decimal?     @db.Decimal(18, 2)
+  maximumContractCurrency     String       @default("USD")
+  typicalWorkingCapitalNeed   Decimal?     @db.Decimal(18, 2)
+  hasUsdAccess                Boolean      @default(false)
+  hasExistingCreditFacilities Boolean      @default(false)
+  currentLenders              String?      @db.Text
+  insuranceDescription        String?      @db.Text
+  createdAt                   DateTime     @default(now())
+  updatedAt                   DateTime     @updatedAt
+
+  @@map("supplier_profiles")
+}
+
+/// Deliberately minimal. MConnect stores only what is needed to identify a
+/// banking relationship — never credentials, never full account numbers.
+model BankingRelationship {
+  id                       String       @id @default(uuid()) @db.Uuid
+  organizationId           String       @db.Uuid
+  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  institutionName          String
+  branch                   String?
+  accountCurrency          String       @default("USD")
+  /// Masked identifier only, e.g. "****4821". Validated on write.
+  maskedAccountIdentifier  String?
+  relationshipManagerName  String?
+  relationshipManagerEmail String?
+  relationshipManagerPhone String?
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@map("banking_relationships")
+}
+
+model User {
+  id               String        @id @default(uuid()) @db.Uuid
+  email            String        @unique
+  emailVerifiedAt  DateTime?
+  passwordHash     String
+  name             String
+  jobTitle         String?
+  phone            String?
+  country          String?
+  locale           String        @default("en")
+  status           AccountStatus @default(PENDING_REVIEW)
+  /// Reserved for the MFA rollout. No secret material is stored until then.
+  mfaEnabled       Boolean       @default(false)
+  mfaSecret        String?
+  lastLoginAt      DateTime?
+  failedLoginCount Int           @default(0)
+  lockedUntil      DateTime?
+  isDemo           Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  memberships       OrganizationMembership[]
+  tokens            VerificationToken[]
+  documents         Document[]
+  uploadedDocuments Document[]               @relation("DocumentUploader")
+  comments          Comment[]
+  auditEvents       AuditEvent[]
+  notifications     Notification[]
+
+  approvalsRequestedFrom Approval[] @relation("ApprovalRequestedFromUser")
+  approvalsRequestedBy   Approval[] @relation("ApprovalRequestedBy")
+  approvalsDecidedBy     Approval[] @relation("ApprovalDecidedBy")
+
+  rfisRaised   Rfi[] @relation("RfiRaisedBy")
+  rfisAssigned Rfi[] @relation("RfiAssignedTo")
+
+  transactionAccessGranted TransactionAccess[]         @relation("AccessGrantedBy")
+  verifications            PurchaseOrderVerification[]
+  milestoneUpdates         TransactionMilestone[]      @relation("MilestoneCompletedBy")
+  registrationReviews      RegistrationRequest[]       @relation("RegistrationReviewer")
+  registrationRequest      RegistrationRequest?
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model OrganizationMembership {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @db.Uuid
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           Role
+  /// The organization a user lands in after sign-in when they belong to several.
+  isPrimary      Boolean      @default(true)
+  /// Lets an administrator revoke a single membership without disabling the user.
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([role])
+  @@map("organization_memberships")
+}
+
+model VerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      TokenType
+  /// SHA-256 of the token. The plaintext only ever exists in the emailed link.
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, type])
+  @@index([expiresAt])
+  @@map("verification_tokens")
+}
+
+model RegistrationRequest {
+  id                    String           @id @default(uuid()) @db.Uuid
+  userId                String?          @unique @db.Uuid
+  user                  User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name                  String
+  email                 String
+  companyName           String
+  jobTitle              String?
+  phone                 String?
+  country               String
+  organizationType      OrganizationType
+  reason                String           @db.Text
+  status                AccountStatus    @default(PENDING_REVIEW)
+  reviewedById          String?          @db.Uuid
+  reviewedBy            User?            @relation("RegistrationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt            DateTime?
+  reviewNotes           String?          @db.Text
+  createdOrganizationId String?          @db.Uuid
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("registration_requests")
+}
+
+// ---------------------------------------------------------------------------
+// Projects & purchase orders
+// ---------------------------------------------------------------------------
+
+model Project {
+  id                   String        @id @default(uuid()) @db.Uuid
+  reference            String        @unique
+  name                 String
+  projectOwnerId       String        @db.Uuid
+  projectOwner         Organization  @relation("ProjectOwner", fields: [projectOwnerId], references: [id], onDelete: Restrict)
+  epcId                String?       @db.Uuid
+  epc                  Organization? @relation("ProjectEpc", fields: [epcId], references: [id], onDelete: SetNull)
+  location             String?
+  country              String
+  sector               String?
+  description          String?       @db.Text
+  status               ProjectStatus @default(ACTIVE)
+  startDate            DateTime?     @db.Date
+  targetCompletionDate DateTime?     @db.Date
+  currency             String        @default("USD")
+  localContentProgram  String?
+  primaryContactName   String?
+  primaryContactEmail  String?
+  isDemo               Boolean       @default(false)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+  transactions   Transaction[]
+
+  @@index([projectOwnerId])
+  @@index([epcId])
+  @@index([status])
+  @@index([country])
+  @@map("projects")
+}
+
+model PurchaseOrder {
+  id                        String              @id @default(uuid()) @db.Uuid
+  poNumber                  String
+  projectId                 String              @db.Uuid
+  project                   Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  supplierId                String              @db.Uuid
+  supplier                  Organization        @relation("PoSupplier", fields: [supplierId], references: [id], onDelete: Restrict)
+  /// The EPC or project-owner organization that issued the PO and must verify it.
+  buyerId                   String              @db.Uuid
+  buyer                     Organization        @relation("PoBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  issueDate                 DateTime            @db.Date
+  currency                  String              @default("USD")
+  value                     Decimal             @db.Decimal(18, 2)
+  paymentTerms              String?
+  incoterm                  String?
+  deliveryTerms             String?
+  requestedDeliveryDate     DateTime?           @db.Date
+  scopeDescription          String              @db.Text
+  manufacturingComponent    Decimal?            @db.Decimal(18, 2)
+  importedMaterialComponent Decimal?            @db.Decimal(18, 2)
+  localLabourComponent      Decimal?            @db.Decimal(18, 2)
+  logisticsComponent        Decimal?            @db.Decimal(18, 2)
+  taxesComponent            Decimal?            @db.Decimal(18, 2)
+  expectedGrossMargin       Decimal?            @db.Decimal(5, 2)
+  advancePaymentAmount      Decimal?            @db.Decimal(18, 2)
+  progressPaymentSchedule   String?             @db.Text
+  finalPaymentTerms         String?             @db.Text
+  expiryDate                DateTime?           @db.Date
+  status                    PurchaseOrderStatus @default(DRAFT)
+  submittedAt               DateTime?
+  isDemo                    Boolean             @default(false)
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+
+  transaction   Transaction?
+  verifications PurchaseOrderVerification[]
+
+  /// A supplier cannot raise the same PO number twice against the same buyer.
+  @@unique([supplierId, buyerId, poNumber])
+  @@index([projectId])
+  @@index([supplierId])
+  @@index([buyerId])
+  @@index([status])
+  @@index([poNumber])
+  @@index([createdAt])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderVerification {
+  id                       String             @id @default(uuid()) @db.Uuid
+  purchaseOrderId          String             @db.Uuid
+  purchaseOrder            PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  verifiedById             String             @db.Uuid
+  verifiedBy               User               @relation(fields: [verifiedById], references: [id], onDelete: Restrict)
+  verifiedByOrganizationId String             @db.Uuid
+  method                   VerificationMethod @default(PLATFORM_REVIEW)
+  decision                 ApprovalDecision
+  valueConfirmed           Boolean            @default(false)
+  buyerConfirmed           Boolean            @default(false)
+  supplierConfirmed        Boolean            @default(false)
+  paymentTermsConfirmed    Boolean            @default(false)
+  poIsActiveConfirmed      Boolean            @default(false)
+  comments                 String?            @db.Text
+  createdAt                DateTime           @default(now())
+
+  @@index([purchaseOrderId])
+  @@index([verifiedByOrganizationId])
+  @@map("purchase_order_verifications")
+}
+
+// ---------------------------------------------------------------------------
+// Transactions
+// ---------------------------------------------------------------------------
+
+/// The transaction is the umbrella record a PO becomes once submitted. It is
+/// what every dashboard, document, approval and audit event hangs from.
+model Transaction {
+  id              String           @id @default(uuid()) @db.Uuid
+  /// MCONNECT-2026-000001 — human readable, never the primary key.
+  number          String           @unique
+  purchaseOrderId String           @unique @db.Uuid
+  purchaseOrder   PurchaseOrder    @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  projectId       String           @db.Uuid
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  supplierId      String           @db.Uuid
+  supplier        Organization     @relation("TxSupplier", fields: [supplierId], references: [id], onDelete: Restrict)
+  buyerId         String           @db.Uuid
+  buyer           Organization     @relation("TxBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  stage           TransactionStage @default(PURCHASE_ORDER)
+  closedAt        DateTime?
+  isDemo          Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  fundingRequests  FundingRequest[]
+  procurementItems ProcurementItem[]
+  shipments        Shipment[]
+  milestones       TransactionMilestone[]
+  documents        Document[]
+  approvals        Approval[]
+  comments         Comment[]
+  rfis             Rfi[]
+  access           TransactionAccess[]
+  invoices         Invoice[]
+  stageHistory     TransactionStageEvent[]
+
+  @@index([supplierId])
+  @@index([buyerId])
+  @@index([projectId])
+  @@index([stage])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model TransactionStageEvent {
+  id            String            @id @default(uuid()) @db.Uuid
+  transactionId String            @db.Uuid
+  transaction   Transaction       @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  fromStage     TransactionStage?
+  toStage       TransactionStage
+  actorUserId   String?           @db.Uuid
+  note          String?           @db.Text
+  createdAt     DateTime          @default(now())
+
+  @@index([transactionId, createdAt])
+  @@map("transaction_stage_events")
+}
+
+/// Explicit grant of a transaction to an organization that is not the supplier
+/// or the buyer — a financier invited to review it, or a read-only auditor.
+model TransactionAccess {
+  id             String       @id @default(uuid()) @db.Uuid
+  transactionId  String       @db.Uuid
+  transaction    Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// True for auditors and other observers: blocks every write path.
+  readOnly       Boolean      @default(false)
+  grantedById    String?      @db.Uuid
+  grantedBy      User?        @relation("AccessGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([transactionId, organizationId])
+  @@index([organizationId])
+  @@map("transaction_access")
+}
+
+// ---------------------------------------------------------------------------
+// Financing
+// ---------------------------------------------------------------------------
+
+model FundingRequest {
+  id                       String               @id @default(uuid()) @db.Uuid
+  reference                String               @unique
+  transactionId            String               @db.Uuid
+  transaction              Transaction          @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  requestedAmount          Decimal              @db.Decimal(18, 2)
+  currency                 String               @default("USD")
+  /// Denormalised for dashboards; recomputed whenever the PO value changes.
+  percentageOfPoValue      Decimal?             @db.Decimal(5, 2)
+  purposeSummary           String?              @db.Text
+  requiredFundingDate      DateTime?            @db.Date
+  proposedRepaymentSource  String?              @db.Text
+  expectedBuyerPaymentDate DateTime?            @db.Date
+  status                   FundingRequestStatus @default(DRAFT)
+
+  /// Populated by the financier on approval.
+  assignedFinancierId String?       @db.Uuid
+  assignedFinancier   Organization? @relation("FundingFinancier", fields: [assignedFinancierId], references: [id], onDelete: SetNull)
+  approvedAmount      Decimal?      @db.Decimal(18, 2)
+  approvedCurrency    String?
+  interestRatePct     Decimal?      @db.Decimal(6, 3)
+  feePct              Decimal?      @db.Decimal(6, 3)
+  conditionsPrecedent String?       @db.Text
+  financierNotes      String?       @db.Text
+  decisionAt          DateTime?
+  submittedAt         DateTime?
+  fundedAt            DateTime?
+  repaidAt            DateTime?
+  isDemo              Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  lines         FundingRequestLine[]
+  disbursements Disbursement[]
+  repayments    Repayment[]
+
+  @@index([transactionId])
+  @@index([status])
+  @@index([assignedFinancierId])
+  @@index([createdAt])
+  @@map("funding_requests")
+}
+
+model FundingRequestLine {
+  id               String         @id @default(uuid()) @db.Uuid
+  fundingRequestId String         @db.Uuid
+  fundingRequest   FundingRequest @relation(fields: [fundingRequestId], references: [id], onDelete: Cascade)
+  purpose          FundingPurpose
+  description      String
+  vendorId         String?        @db.Uuid
+  vendor           Vendor?        @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  amount           Decimal        @db.Decimal(18, 2)
+  currency         String         @default("USD")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([fundingRequestId])
+  @@index([vendorId])
+  @@map("funding_request_lines")
+}
+
+/// Record-keeping only in the MVP: MConnect does not move money. The shape is
+/// deliberately close to what a payment rail would need so a provider can be
+/// attached later without a migration of the business data.
+model Disbursement {
+  id                   String                          @id @default(uuid()) @db.Uuid
+  reference            String                          @unique
+  fundingRequestId     String                          @db.Uuid
+  fundingRequest       FundingRequest                  @relation(fields: [fundingRequestId], references: [id], onDelete: Cascade)
+  payeeName            String
+  payeeVendorId        String?                         @db.Uuid
+  payeeVendor          Vendor?                         @relation(fields: [payeeVendorId], references: [id], onDelete: SetNull)
+  /// Free-text placeholder. Never a full account number; validated on write.
+  payeeBankDetails     String?
+  invoiceId            String?                         @db.Uuid
+  invoice              Invoice?                        @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  approvedAmount       Decimal                         @db.Decimal(18, 2)
+  approvedCurrency     String                          @default("USD")
+  purpose              FundingPurpose                  @default(OTHER)
+  authorizationStatus  DisbursementAuthorizationStatus @default(DRAFT)
+  paymentStatus        DisbursementPaymentStatus       @default(NOT_PAID)
+  paymentDate          DateTime?                       @db.Date
+  transactionReference String?
+  notes                String?                         @db.Text
+  createdAt            DateTime                        @default(now())
+  updatedAt            DateTime                        @updatedAt
+
+  documents Document[]
+
+  @@index([fundingRequestId])
+  @@index([authorizationStatus])
+  @@index([paymentStatus])
+  @@map("disbursements")
+}
+
+model Repayment {
+  id                 String          @id @default(uuid()) @db.Uuid
+  reference          String          @unique
+  fundingRequestId   String          @db.Uuid
+  fundingRequest     FundingRequest  @relation(fields: [fundingRequestId], references: [id], onDelete: Cascade)
+  amount             Decimal         @db.Decimal(18, 2)
+  currency           String          @default("USD")
+  source             RepaymentSource @default(BUYER_PAYMENT)
+  receivedDate       DateTime        @db.Date
+  reference_external String?
+  notes              String?         @db.Text
+  createdAt          DateTime        @default(now())
+
+  @@index([fundingRequestId])
+  @@index([receivedDate])
+  @@map("repayments")
+}
+
+model Invoice {
+  id            String      @id @default(uuid()) @db.Uuid
+  transactionId String      @db.Uuid
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  invoiceNumber String
+  issueDate     DateTime    @db.Date
+  dueDate       DateTime?   @db.Date
+  amount        Decimal     @db.Decimal(18, 2)
+  currency      String      @default("USD")
+  description   String?     @db.Text
+  submittedAt   DateTime?
+  acceptedAt    DateTime?
+  paidAt        DateTime?
+  paidAmount    Decimal?    @db.Decimal(18, 2)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  disbursements Disbursement[]
+
+  @@unique([transactionId, invoiceNumber])
+  @@index([transactionId])
+  @@map("invoices")
+}
+
+// ---------------------------------------------------------------------------
+// Procurement & logistics
+// ---------------------------------------------------------------------------
+
+model Vendor {
+  id             String       @id @default(uuid()) @db.Uuid
+  /// The organization that maintains this vendor record (normally the supplier).
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  country        String
+  contactName    String?
+  contactEmail   String?
+  contactPhone   String?
+  website        String?
+  notes          String?      @db.Text
+  isDemo         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  procurementItems    ProcurementItem[]
+  fundingRequestLines FundingRequestLine[]
+  disbursements       Disbursement[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([country])
+  @@map("vendors")
+}
+
+model ProcurementItem {
+  id                   String                @id @default(uuid()) @db.Uuid
+  transactionId        String                @db.Uuid
+  transaction          Transaction           @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  vendorId             String?               @db.Uuid
+  vendor               Vendor?               @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  itemName             String
+  description          String?               @db.Text
+  countryOfOrigin      String?
+  quantity             Decimal               @default(1) @db.Decimal(14, 3)
+  unit                 String?
+  currency             String                @default("USD")
+  amount               Decimal               @db.Decimal(18, 2)
+  expectedPurchaseDate DateTime?             @db.Date
+  expectedShipDate     DateTime?             @db.Date
+  expectedArrivalDate  DateTime?             @db.Date
+  requiredByDate       DateTime?             @db.Date
+  logisticsRequired    Boolean               @default(false)
+  status               ProcurementItemStatus @default(PLANNED)
+  quoteDocumentId      String?               @db.Uuid
+  shipmentId           String?               @db.Uuid
+  shipment             Shipment?             @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([transactionId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([shipmentId])
+  @@map("procurement_items")
+}
+
+model Shipment {
+  id                 String         @id @default(uuid()) @db.Uuid
+  reference          String         @unique
+  transactionId      String         @db.Uuid
+  transaction        Transaction    @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  origin             String
+  destination        String
+  mode               ShipmentMode
+  carrier            String?
+  bookingReference   String?
+  masterBill         String?
+  houseBill          String?
+  containerNumber    String?
+  estimatedDeparture DateTime?
+  actualDeparture    DateTime?
+  estimatedArrival   DateTime?
+  actualArrival      DateTime?
+  customsStatus      CustomsStatus  @default(NOT_STARTED)
+  deliveryStatus     DeliveryStatus @default(NOT_STARTED)
+  notes              String?        @db.Text
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  milestones       ShipmentMilestone[]
+  procurementItems ProcurementItem[]
+
+  @@index([transactionId])
+  @@index([mode])
+  @@index([deliveryStatus])
+  @@map("shipments")
+}
+
+model ShipmentMilestone {
+  id           String                @id @default(uuid()) @db.Uuid
+  shipmentId   String                @db.Uuid
+  shipment     Shipment              @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  type         ShipmentMilestoneType
+  occurredAt   DateTime
+  location     String?
+  notes        String?               @db.Text
+  /// "MANUAL" today; a carrier integration identifier later.
+  sourceSystem String                @default("MANUAL")
+  createdAt    DateTime              @default(now())
+
+  @@index([shipmentId, occurredAt])
+  @@map("shipment_milestones")
+}
+
+model TransactionMilestone {
+  id            String          @id @default(uuid()) @db.Uuid
+  transactionId String          @db.Uuid
+  transaction   Transaction     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  type          MilestoneType
+  title         String
+  description   String?         @db.Text
+  sequence      Int             @default(0)
+  status        MilestoneStatus @default(PENDING)
+  dueDate       DateTime?       @db.Date
+  completedAt   DateTime?
+  completedById String?         @db.Uuid
+  completedBy   User?           @relation("MilestoneCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  documents Document[]
+
+  @@index([transactionId, sequence])
+  @@index([status])
+  @@index([dueDate])
+  @@map("transaction_milestones")
+}
+
+// ---------------------------------------------------------------------------
+// Documents, approvals, communications
+// ---------------------------------------------------------------------------
+
+model Document {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizationId String                @db.Uuid
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transactionId  String?               @db.Uuid
+  transaction    Transaction?          @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  milestoneId    String?               @db.Uuid
+  milestone      TransactionMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  disbursementId String?               @db.Uuid
+  disbursement   Disbursement?         @relation(fields: [disbursementId], references: [id], onDelete: SetNull)
+  category       DocumentCategory
+  visibility     DocumentVisibility    @default(TRANSACTION_PARTIES)
+  fileName       String
+  contentType    String
+  sizeBytes      Int
+  /// Object-storage key. Never rendered to the browser; downloads go through a
+  /// server-side authorization check that mints a short-lived signed URL.
+  storageKey     String                @unique
+  checksumSha256 String?
+  version        Int                   @default(1)
+  /// Points at the document this one supersedes, so versions form a chain.
+  supersedesId   String?               @db.Uuid
+  expiresAt      DateTime?             @db.Date
+  uploadedById   String                @db.Uuid
+  uploadedBy     User                  @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+  deletedAt      DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  userId String? @db.Uuid
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([transactionId])
+  @@index([category])
+  @@index([createdAt])
+  @@map("documents")
+}
+
+model Approval {
+  id                          String           @id @default(uuid()) @db.Uuid
+  transactionId               String           @db.Uuid
+  transaction                 Transaction      @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  type                        ApprovalType
+  requestedFromOrganizationId String?          @db.Uuid
+  requestedFromOrganization   Organization?    @relation("ApprovalRequestedFromOrg", fields: [requestedFromOrganizationId], references: [id], onDelete: SetNull)
+  requestedFromUserId         String?          @db.Uuid
+  requestedFromUser           User?            @relation("ApprovalRequestedFromUser", fields: [requestedFromUserId], references: [id], onDelete: SetNull)
+  requestedById               String?          @db.Uuid
+  requestedBy                 User?            @relation("ApprovalRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedAt                 DateTime         @default(now())
+  decision                    ApprovalDecision @default(PENDING)
+  decidedById                 String?          @db.Uuid
+  decidedBy                   User?            @relation("ApprovalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt                   DateTime?
+  comments                    String?          @db.Text
+  createdAt                   DateTime         @default(now())
+  updatedAt                   DateTime         @updatedAt
+
+  @@index([transactionId, type])
+  @@index([requestedFromOrganizationId, decision])
+  @@index([decision])
+  @@map("approvals")
+}
+
+model Comment {
+  id                   String      @id @default(uuid()) @db.Uuid
+  transactionId        String      @db.Uuid
+  transaction          Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  authorId             String      @db.Uuid
+  author               User        @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  authorOrganizationId String      @db.Uuid
+  body                 String      @db.Text
+  /// User ids mentioned in the body, resolved at write time.
+  mentionedUserIds     String[]    @db.Uuid
+  rfiId                String?     @db.Uuid
+  rfi                  Rfi?        @relation(fields: [rfiId], references: [id], onDelete: SetNull)
+  /// Internal notes are visible to AI Logistix staff only.
+  internalOnly         Boolean     @default(false)
+  createdAt            DateTime    @default(now())
+
+  @@index([transactionId, createdAt])
+  @@map("comments")
+}
+
+model Rfi {
+  id                        String            @id @default(uuid()) @db.Uuid
+  reference                 String            @unique
+  transactionId             String            @db.Uuid
+  transaction               Transaction       @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  subject                   String
+  body                      String            @db.Text
+  /// Set when the RFI asks specifically for a document of this category.
+  requestedDocumentCategory DocumentCategory?
+  raisedById                String            @db.Uuid
+  raisedBy                  User              @relation("RfiRaisedBy", fields: [raisedById], references: [id], onDelete: Restrict)
+  raisedByOrganizationId    String            @db.Uuid
+  assignedToOrganizationId  String            @db.Uuid
+  assignedToUserId          String?           @db.Uuid
+  assignedToUser            User?             @relation("RfiAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  status                    RfiStatus         @default(OPEN)
+  dueDate                   DateTime?         @db.Date
+  respondedAt               DateTime?
+  resolvedAt                DateTime?
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+
+  comments Comment[]
+
+  @@index([transactionId, status])
+  @@index([assignedToOrganizationId, status])
+  @@map("rfis")
+}
+
+// ---------------------------------------------------------------------------
+// Platform
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String              @id @default(uuid()) @db.Uuid
+  userId    String              @db.Uuid
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel @default(IN_APP)
+  event     String
+  subject   String
+  body      String              @db.Text
+  linkPath  String?
+  status    NotificationStatus  @default(PENDING)
+  error     String?
+  readAt    DateTime?
+  sentAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  @@index([userId, readAt])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model AuditEvent {
+  id             String        @id @default(uuid()) @db.Uuid
+  actorUserId    String?       @db.Uuid
+  actorUser      User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  /// Denormalised so the trail survives a user or organization being removed.
+  actorEmail     String?
+  organizationId String?       @db.Uuid
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  action         String
+  entityType     String
+  entityId       String?
+  /// Redacted before write: never contains passwords, tokens or bank details.
+  beforeData     Json?
+  afterData      Json?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime      @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+model Inquiry {
+  id        String        @id @default(uuid()) @db.Uuid
+  type      InquiryType
+  name      String
+  email     String
+  company   String
+  jobTitle  String?
+  phone     String?
+  country   String
+  message   String        @db.Text
+  status    InquiryStatus @default(NEW)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([type, status])
+  @@index([createdAt])
+  @@map("inquiries")
+}
+
+/// Simple, durable rate-limit counters. Backed by the database rather than an
+/// in-memory map so limits survive a restart and hold across multiple replicas.
+model RateLimitCounter {
+  id          String   @id @default(uuid()) @db.Uuid
+  bucketKey   String   @unique
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
+
+  @@index([windowStart])
+  @@map("rate_limit_counters")
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}

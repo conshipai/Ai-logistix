@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /$
+Allow: /how-it-works
+Allow: /local-content
+Allow: /financial-structure
+Allow: /why-mconnect
+Allow: /contact
+Disallow: /app
+Disallow: /api
+Disallow: /login
+Disallow: /register
+Disallow: /reset-password
+Disallow: /verify-email

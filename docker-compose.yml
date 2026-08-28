@@ -1,8 +1,64 @@
-version: '3.8'
+# Local development stack.
+#
+# Production deployment goes through Coolify using the Dockerfile; this file is
+# for running the whole stack locally, including PostgreSQL and MinIO so the
+# S3 storage driver can be exercised before deployment.
 services:
-  web:
-    image: nginx:alpine
-    volumes:
-      - ./index.html:/usr/share/nginx/html/index.html
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mconnect
+      POSTGRES_PASSWORD: mconnect
+      POSTGRES_DB: mconnect
     ports:
-      - "80:80"
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mconnect']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # S3-compatible object storage, so the production storage path can be tested
+  # locally rather than only the local-filesystem fallback.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: mconnect
+      MINIO_ROOT_PASSWORD: mconnect-dev-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://mconnect:mconnect@postgres:5432/mconnect?schema=public
+      AUTH_SECRET: local-development-secret-not-for-production-use
+      AUTH_URL: http://localhost:3000
+      APP_URL: http://localhost:3000
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_PATH: /app/.storage
+    ports:
+      - '3000:3000'
+    volumes:
+      - document-storage:/app/.storage
+
+volumes:
+  postgres-data:
+  minio-data:
+  document-storage:
