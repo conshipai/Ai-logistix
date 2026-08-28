@@ -20,7 +20,7 @@ import {
   DOCUMENT_CATEGORY_LABELS,
   DOCUMENT_VISIBILITY_LABELS,
 } from '@/server/services/documents'
-import { allowedUploadAccept } from '@/lib/storage'
+import { allowedUploadAccept } from '@/lib/upload-types'
 import { can } from '@/lib/rbac'
 import { formatDate } from '@/lib/utils'
 import type { TransactionPanelProps } from './types'

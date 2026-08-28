@@ -166,32 +166,6 @@ export function __setStorageDriver(next: StorageDriver | null): void {
   driver = next
 }
 
-/**
- * Upload allow-list. Executables and scripts are rejected outright; a document
- * platform never needs them, and letting one through would turn storage into a
- * malware distribution channel.
- */
-export const ALLOWED_MIME_TYPES: Record<string, string[]> = {
-  'application/pdf': ['.pdf'],
-  'image/jpeg': ['.jpg', '.jpeg'],
-  'image/png': ['.png'],
-  'image/tiff': ['.tif', '.tiff'],
-  'image/webp': ['.webp'],
-  'application/msword': ['.doc'],
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-  'application/vnd.ms-excel': ['.xls'],
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-  'text/csv': ['.csv'],
-  'text/plain': ['.txt'],
-}
-
-export function isAllowedUpload(contentType: string, fileName: string): boolean {
-  const extensions = ALLOWED_MIME_TYPES[contentType.toLowerCase().split(';')[0]!.trim()]
-  if (!extensions) return false
-  const ext = path.extname(fileName).toLowerCase()
-  return extensions.includes(ext)
-}
-
-export function allowedUploadAccept(): string {
-  return Object.values(ALLOWED_MIME_TYPES).flat().join(',')
-}
+// The upload allow-list lives in its own module so client components can read
+// the accept attribute without importing this file's filesystem driver.
+export { ALLOWED_MIME_TYPES, allowedUploadAccept, isAllowedUpload } from '@/lib/upload-types'

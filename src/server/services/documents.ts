@@ -11,7 +11,8 @@ import {
   requirePermission,
   type Actor,
 } from '@/lib/rbac'
-import { isAllowedUpload, storage } from '@/lib/storage'
+import { storage } from '@/lib/storage'
+import { isAllowedUpload } from '@/lib/upload-types'
 import { requireTransactionScope, transactionScopeWhere } from '@/server/services/access'
 
 /**
