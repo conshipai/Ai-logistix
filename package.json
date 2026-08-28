@@ -5,8 +5,8 @@
   "description": "MConnect — Local Content Supply Chain Finance platform, powered by AI Logistix",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
-    "start": "next start",
+    "build": "prisma generate && next build && node scripts/prepare-standalone.mjs",
+    "start": "node scripts/start.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
@@ -56,5 +56,8 @@
       "nodemailer": "$nodemailer"
     },
     "deepmerge-ts": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=20.9.0"
   }
 }
