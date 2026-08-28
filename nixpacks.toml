@@ -1,0 +1,26 @@
+# Nixpacks configuration.
+#
+# The production path for MConnect is the Dockerfile build pack — it produces a
+# smaller image, runs as a non-root user, and carries a health check. This file
+# exists so that a Nixpacks build (Coolify's default) also produces a correct
+# deployment rather than a broken one.
+#
+# The version pin is the important part: Nixpacks defaults to Node 18, which is
+# end-of-life and which Next.js 16 refuses to build under. `.nvmrc` and the
+# `engines.node` field in package.json say the same thing, so every tool that
+# reads any of them agrees.
+
+providers = ["node"]
+
+[phases.setup]
+nixPkgs = ["nodejs_22", "openssl"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+# npm start applies migrations, then serves the Next.js standalone output.
+cmd = "npm start"

@@ -126,7 +126,7 @@ docker compose up --build
 |---|---|
 | `npm run dev` | Development server |
 | `npm run build` | Production build (runs `prisma generate` first) |
-| `npm start` | Serve a production build |
+| `npm start` | Apply migrations, then serve the standalone production build |
 | `npm run typecheck` | TypeScript, no emit |
 | `npm run lint` | ESLint |
 | `npm test` | Full test suite |
@@ -356,11 +356,25 @@ application container cannot reach `localhost`.
 
 ### 2. Application
 
-- **Build pack:** Dockerfile
+- **Build pack:** Dockerfile  ← *set this explicitly*
 - **Dockerfile location:** `/Dockerfile`
 - **Base directory:** `/`
 - **Port:** `3000`
 - **Health check path:** `/api/health`
+
+> **Coolify defaults to Nixpacks, not Dockerfile.** Nixpacks builds on Node 18,
+> which is end-of-life and which Next.js 16 refuses to build under, so a
+> default-configured application fails at the build step with
+> `You are using Node.js 18.20.5. For Next.js, Node.js version ">=20.9.0" is required.`
+>
+> The repository pins the Node version three ways — `.nvmrc`, `engines.node` in
+> `package.json`, and `nixpacks.toml` — so a Nixpacks build now selects Node 22
+> and produces a working deployment. Setting `NIXPACKS_NODE_VERSION=22` in the
+> environment achieves the same thing if the build pack ignores all three.
+>
+> The Dockerfile is still the recommended path: it produces a much smaller
+> image, runs as a non-root user, carries a container health check, and keeps
+> the build toolchain out of the runtime.
 
 ### 3. Environment variables
 
@@ -392,8 +406,13 @@ limiting and audit. HSTS is set by the application.
 
 ### 6. Deploy
 
-Migrations run automatically at container start. The first deployment creates
-the schema.
+Migrations run automatically at start, on both paths — the Docker entrypoint and
+`npm start` each run `prisma migrate deploy` before serving. The first
+deployment creates the schema.
+
+If `DATABASE_URL` is wrong or unreachable, the container exits during migration
+rather than serving traffic against a schema the application does not expect.
+That is deliberate: check the deployment logs for the migration step first.
 
 ### 7. First administrator
 
