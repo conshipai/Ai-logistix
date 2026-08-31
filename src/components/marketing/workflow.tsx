@@ -29,9 +29,9 @@ export function WorkflowGraphic({ className }: { className?: string }) {
           role="img"
           aria-label="MConnect workflow: purchase order, verification, financing review, procurement, logistics, delivery, payment, facility repaid."
         >
-          <line x1="24" y1="42" x2="1096" y2="42" stroke="#c6d2e4" strokeWidth="2" />
+          <line x1="82" y1="42" x2="1038" y2="42" stroke="#c6d2e4" strokeWidth="2" />
           {WORKFLOW_STEPS.map((step, index) => {
-            const x = 24 + (index * (1096 - 24)) / (WORKFLOW_STEPS.length - 1)
+            const x = 82 + (index * (1038 - 82)) / (WORKFLOW_STEPS.length - 1)
             const isLast = index === WORKFLOW_STEPS.length - 1
             return (
               <g key={step.n}>
