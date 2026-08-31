@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 const NAV = [
   { href: '/how-it-works', label: 'How it works' },
   { href: '/local-content', label: 'Local content' },
+  { href: '/for-government', label: 'For government' },
   { href: '/financial-structure', label: 'Financial structure' },
   { href: '/why-mconnect', label: 'Why MConnect' },
   { href: '/contact', label: 'Contact' },
